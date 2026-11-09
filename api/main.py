@@ -12,6 +12,7 @@ from api.models import (
 from core.service import PLNRAGService
 from parsers import get_parser
 from config import get_settings
+from storage.vector_store import VectorStoreResetError
 
 _start_time = time.time()
 _service: PLNRAGService | None = None
@@ -109,7 +110,17 @@ async def reset(req: ResetRequest = ResetRequest()):
     scope='vectordb': clears only Qdrant
     """
     svc = get_service()
-    svc.reset(req.scope)
+    try:
+        svc.reset(req.scope)
+    except VectorStoreResetError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "vectordb_reset_failed",
+                "message": "Vector database reset could not be confirmed",
+                "scope": req.scope,
+            },
+        ) from exc
     return ResetResponse(status="ok", scope=req.scope)
 
 

@@ -8,6 +8,10 @@ from config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class VectorStoreResetError(RuntimeError):
+    """Raised when deletion of the Qdrant collection cannot be confirmed."""
+
+
 class VectorStore:
     """
     Manages NL ↔ PLN atom mappings in Qdrant.
@@ -140,11 +144,20 @@ class VectorStore:
         return context, vector
 
     def reset(self):
+        """Delete the collection; an already absent collection is also success."""
         try:
-            self._client.delete(f"{self._qdrant}/collections/{self._collection}")
-        except Exception as exc:
+            response = self._client.delete(f"{self._qdrant}/collections/{self._collection}")
+            if response.status_code != 404:
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
             logger.warning("Failed to reset Qdrant collection %s: %s", self._collection, exc)
-        self._vector_size = None
+            raise VectorStoreResetError(
+                "Vector database reset could not be confirmed"
+            ) from exc
+        finally:
+            # A timeout may occur after deletion. Force the next write to
+            # check the collection instead of trusting cached dimensions.
+            self._vector_size = None
 
     @property
     def count(self) -> int:
